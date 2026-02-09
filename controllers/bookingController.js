@@ -1,9 +1,12 @@
 import Booking from "../models/Booking.js";
+import User from "../models/User.js";
 import Room from "../models/Room.js";
 import Billing from "../models/Billing.js";
 import stripe from "../utils/stripe.js";
 import Notification from "../models/Notification.js";
 import pusher from "../utils/pusher.js";
+import sendEmail from "../utils/sendEmail.js";
+import { bookingConfirmationTemplate, bookingCancellationTemplate } from "../utils/emailTemplates.js";
 
 export const createPaymentIntent = async (req, res) => {
   try {
@@ -198,6 +201,27 @@ export const createBooking = async (req, res) => {
       message: `New booking: Room ${roomDetails.roomNumber} for $${totalAmount}`,
       data: { bookingId: newBooking._id, roomId: room },
     }).save();
+
+    // Send Confirmation Email
+
+    
+    try {
+        const user = await User.findById(req.user.id);
+        if (user && user.email) {
+
+            const html = bookingConfirmationTemplate(newBooking, roomDetails);
+            await sendEmail({
+                email: user.email,
+                subject: 'Booking Confirmation - LuxuryStay',
+                html: html
+            });
+
+        } else {
+             console.warn('Skipping email: User not found or email missing.');
+        }
+    } catch (emailError) {
+        console.error('Email sending failed:', emailError);
+    }
   } catch (error) {
     console.error("Create Booking Error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
@@ -342,8 +366,38 @@ export const updateBookingStatus = async (req, res) => {
             message: `Payment Refunded: $${booking.totalAmount} for Booking #${booking._id.toString().slice(-6)}`,
             data: { bookingId: booking._id },
           }).save();
+
+          // Send Cancellation Email
+          try {
+              const html = bookingCancellationTemplate(booking, booking.room);
+              // user is populated? Yes: booking = await Booking.findById(req.params.id).populate("room");
+              // But user was not populated in the findById call above line 252? -> const booking = await Booking.findById(req.params.id).populate("room");
+              // We need to populate user to get email.
+              const bookingWithUser = await Booking.findById(booking._id).populate('user');
+              
+              if (bookingWithUser && bookingWithUser.user && bookingWithUser.user.email) {
+                  await sendEmail({
+                      email: bookingWithUser.user.email,
+                      subject: 'Booking Cancelled - LuxuryStay',
+                      html: html
+                  });
+              } else {
+
+              }
+          } catch (emailError) {
+              console.error('Cancellation email failed:', emailError);
+          }
         } catch (refundError) {
-          console.error("Refund failed:", refundError);
+          if (refundError.code === 'charge_already_refunded') {
+
+               // 2. Update Billing Record (if not already done)
+              await Billing.findOneAndUpdate(
+                { booking: booking._id },
+                { status: "Refunded" }
+              );
+          } else {
+             console.error("Refund failed:", refundError);
+          }
           // We don't stop the cancellation, but we log the error
           // In a real app, you might want to return a warning
         }

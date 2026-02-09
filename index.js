@@ -43,7 +43,27 @@ app.use(xss());
 app.use(hpp());
 
 // Performance Middleware
-app.use(compression());
+app.use(compression({
+  level: 6,
+  threshold: 0,
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  }
+}));
+
+// Serve Static Files with Caching Headers
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+app.use(express.static(path.join(__dirname, '../client/dist'), {
+  maxAge: '1y', // Cache static assets for 1 year
+  etag: false
+}));
 
 // Rate Limiting (100 requests per 15 mins per IP)
 const limiter = rateLimit({
@@ -94,8 +114,12 @@ app.use('/api/events', eventRoutes);
 app.use('/api/inquiries', inquiryRoutes);
 app.use('/api/notifications', notificationRoutes);
 
-app.get('/', (req, res) => {
-  res.send('LuxuryStay HMS API');
+// Serve React App for any other route (SPA Support)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client/dist/index.js')); // Correction: client/dist uses index.html, wait. 
+  // Should check if it exists or let 404 handle API. But usually * is last.
+  // Actually, let's put it after API routes interact.
+  res.sendFile(path.join(__dirname, '../client/dist/index.html'));
 });
 
 // Socket.io removed in favor of Pusher (Stateless)

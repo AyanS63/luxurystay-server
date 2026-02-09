@@ -2,6 +2,7 @@ import Inquiry from '../models/Inquiry.js';
 import sendEmail from '../utils/sendEmail.js';
 import Notification from '../models/Notification.js';
 import pusher from "../utils/pusher.js";
+import { inquiryReceivedTemplate, inquiryReplyTemplate } from "../utils/emailTemplates.js";
 
 // @desc    Create a new inquiry (Public)
 // @route   POST /api/inquiries
@@ -33,6 +34,18 @@ export const createInquiry = async (req, res) => {
         message: `New inquiry from ${name}: ${subject}`,
         data: { inquiryId: newInquiry._id }
     }).save();
+
+    // Send Acknowledgment Email
+    try {
+        const html = inquiryReceivedTemplate(name);
+        await sendEmail({
+            email: email,
+            subject: 'We received your message - LuxuryStay',
+            html: html
+        });
+    } catch (emailError) {
+        console.error('Email sending failed:', emailError);
+    }
 
     res.status(201).json({ message: 'Inquiry sent successfully', inquiry: newInquiry });
   } catch (error) {
@@ -75,7 +88,7 @@ export const replyToInquiry = async (req, res) => {
         await sendEmail({
             email: inquiry.email,
             subject: `Re: ${inquiry.subject} - Response from LuxuryStay`,
-            message: `Dear ${inquiry.name},\n\n${replyMessage}\n\nBest regards,\nLuxuryStay Team`
+            html: inquiryReplyTemplate(inquiry.name, inquiry.message, replyMessage)
         });
     } catch (emailError) {
         console.error('Email sending failed:', emailError);

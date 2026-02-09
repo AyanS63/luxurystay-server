@@ -4,9 +4,10 @@ const sendEmail = async (options) => {
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: process.env.SMTP_PORT,
+    secure: Number(process.env.SMTP_PORT) === 465, // Use SSL for 465, STARTTLS for others
     auth: {
       user: process.env.SMTP_EMAIL,
-      pass: process.env.SMTP_PASSWORD
+      pass: process.env.SMTP_PASSWORD.replace(/\s+/g, '') // Remove spaces from App Password
     }
   });
 
@@ -15,7 +16,7 @@ const sendEmail = async (options) => {
     to: options.email,
     subject: options.subject,
     text: options.message,
-    // html: options.html // Optional: if we want HTML emails later
+    html: options.html // HTML content takes precedence in most clients
   };
 
   const info = await transporter.sendMail(message);

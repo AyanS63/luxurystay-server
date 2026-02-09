@@ -16,6 +16,7 @@ const BillingSchema = new mongoose.Schema({
     default: 'Pending'
   },
   paymentMethod: { type: String },
+  stripePaymentIntentId: { type: String }, // Store Stripe PaymentIntent ID for refunds
   createdAt: { type: Date, default: Date.now }
 });
 

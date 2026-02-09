@@ -3,6 +3,8 @@ import Billing from '../models/Billing.js';
 import Notification from '../models/Notification.js';
 import stripe from '../utils/stripe.js';
 import pusher from "../utils/pusher.js";
+import sendEmail from "../utils/sendEmail.js";
+import { eventInquiryReceivedTemplate, eventStatusUpdateTemplate } from "../utils/emailTemplates.js";
 
 export const createEventPaymentIntent = async (req, res) => {
   try {
@@ -63,6 +65,7 @@ export const confirmEventPayment = async (req, res) => {
     billing.status = 'Paid';
     billing.paidAmount = billing.totalAmount;
     billing.paymentMethod = 'Stripe';
+    billing.stripePaymentIntentId = paymentIntent.id; // Save Payment Intent ID
     billing.paymentDate = new Date();
     await billing.save();
 
@@ -143,6 +146,20 @@ export const createEvent = async (req, res) => {
         data: { eventId: newEvent._id }
     }).save();
 
+    // Send Inquiry Received Email
+    if (contactInfo && contactInfo.email) {
+        try {
+            const html = eventInquiryReceivedTemplate(newEvent);
+            await sendEmail({
+                email: contactInfo.email,
+                subject: 'We Received Your Event Inquiry - LuxuryStay',
+                html: html
+            });
+        } catch (emailError) {
+            console.error('Email sending failed:', emailError);
+        }
+    }
+
     res.status(201).json({ message: 'Event inquiry received successfully', event: newEvent });
   } catch (error) {
     console.error('Create Event Error:', error);
@@ -195,38 +212,43 @@ export const updateEventStatus = async (req, res) => {
         const billing = await Billing.findOne({ event: event._id, status: 'Paid' });
         
         if (billing && billing.paymentMethod === 'Stripe') {
-             // Find original payment intent id - assuming we might store it, 
-             // BUT currently Billing schema doesn't store intent ID directly in a designated field, 
-             // usually it's in metadata or we need to find it from Stripe based on billing?
-             // Best practice: Store stripePaymentIntentId in Billing.
-             // Workaround: We will search for the latest successful charge for this event metadata in Stripe if we didn't save PI ID.
-             // OR better: Update Billing schema to store PI ID. 
-             // Let's check confirming payment code: createEventPaymentIntent returns clientSecret but doesn't save PI ID to DB until confirm...
-             // Wait, confirmEventPayment doesn't save PI ID to billing either! 
-             // We need to fetch PI ID.
-             
-             // Simplification for now: We will try to list payment intents for this event from Stripe if possible, or just skip if we can't find it.
-             // Actually, confirmEventPayment should have saved it. Let's assume we can't do automatic refund without PI ID.
-             // Let's try to query Stripe for intents with metadata eventId.
-             
              try {
-                 const paymentIntents = await stripe.paymentIntents.search({
-                   query: `metadata['eventId']:'${event._id}' AND status:'succeeded'`,
-                 });
+                 let refundId;
                  
-                 if (paymentIntents.data.length > 0) {
-                     const pi = paymentIntents.data[0];
-                     await stripe.refunds.create({ payment_intent: pi.id });
+                 // 1. Try to refund using stored PaymentIntent ID (Preferred)
+                 if (billing.stripePaymentIntentId) {
+                     const refund = await stripe.refunds.create({
+                         payment_intent: billing.stripePaymentIntentId
+                     });
+                     refundId = refund.id;
+                 } 
+                 // 2. Fallback: Search by metadata (Legacy support)
+                 else {
+                     const paymentIntents = await stripe.paymentIntents.search({
+                       query: `metadata['eventId']:'${event._id}' AND status:'succeeded'`,
+                     });
                      
-                     billing.status = 'Refunded';
-                     billing.paidAmount = 0; // Or keep amount but mark status? 
-                     // Usually refunded means money returned.
-                     await billing.save();
-                     
+                     if (paymentIntents.data.length > 0) {
+                         const pi = paymentIntents.data[0];
+                         const refund = await stripe.refunds.create({ payment_intent: pi.id });
+                         refundId = refund.id;
+                     }
+                 }
 
+                 if (refundId) {
+                     billing.status = 'Refunded';
+                     billing.paidAmount = 0; 
+                     await billing.save();
                  }
              } catch (stripeError) {
-                 console.error('Stripe Refund Error:', stripeError);
+                 if (stripeError.code === 'charge_already_refunded') {
+
+                     billing.status = 'Refunded';
+                     billing.paidAmount = 0; 
+                     await billing.save();
+                 } else {
+                    console.error('Stripe Refund Error:', stripeError);
+                 }
                  // Continue with status update but maybe warn?
              }
         }
@@ -234,6 +256,20 @@ export const updateEventStatus = async (req, res) => {
 
     event.status = status;
     await event.save();
+
+    // Send Status Update Email
+    if (event.contactInfo && event.contactInfo.email) {
+        try {
+            const html = eventStatusUpdateTemplate(event, status);
+            await sendEmail({
+                email: event.contactInfo.email,
+                subject: `Event Inquiry Update: ${status} - LuxuryStay`,
+                html: html
+            });
+        } catch (emailError) {
+            console.error('Email sending failed:', emailError);
+        }
+    }
 
     res.json({ message: 'Event status updated', event });
   } catch (error) {
