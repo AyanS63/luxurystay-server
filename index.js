@@ -1,29 +1,29 @@
-import express from 'express'; // Server entry point
-import mongoose from 'mongoose';
-import cors from 'cors';
-import dotenv from 'dotenv';
-import helmet from 'helmet';
-import compression from 'compression';
-import rateLimit from 'express-rate-limit';
-import mongoSanitize from 'express-mongo-sanitize';
-import xss from 'xss-clean';
-import hpp from 'hpp';
+import express from "express"; // Server entry point
+import mongoose from "mongoose";
+import cors from "cors";
+import dotenv from "dotenv";
+import helmet from "helmet";
+import compression from "compression";
+import rateLimit from "express-rate-limit";
+import mongoSanitize from "express-mongo-sanitize";
+// import xss from 'xss-clean'; // Deprecated and removed
+import hpp from "hpp";
 // import { createServer } from 'http'; // No longer needed for Vercel functions
 // import { Server } from 'socket.io';
-import authRoutes from './routes/auth.js';
-import roomRoutes from './routes/rooms.js';
-import bookingRoutes from './routes/bookings.js';
-import reviewRoutes from './routes/reviewRoutes.js';
-import billingRoutes from './routes/billing.js';
-import taskRoutes from './routes/tasks.js';
-import reportRoutes from './routes/reports.js';
-import userRoutes from './routes/users.js';
-import searchRoutes from './routes/search.js';
-import chatRoutes from './routes/chat.js';
-import eventRoutes from './routes/eventRoutes.js';
-import inquiryRoutes from './routes/inquiries.js';
-import notificationRoutes from './routes/notifications.js';
-import Message from './models/Message.js';
+import authRoutes from "./routes/auth.js";
+import roomRoutes from "./routes/rooms.js";
+import bookingRoutes from "./routes/bookings.js";
+import reviewRoutes from "./routes/reviewRoutes.js";
+import billingRoutes from "./routes/billing.js";
+import taskRoutes from "./routes/tasks.js";
+import reportRoutes from "./routes/reports.js";
+import userRoutes from "./routes/users.js";
+import searchRoutes from "./routes/search.js";
+import chatRoutes from "./routes/chat.js";
+import eventRoutes from "./routes/eventRoutes.js";
+import inquiryRoutes from "./routes/inquiries.js";
+import notificationRoutes from "./routes/notifications.js";
+import Message from "./models/Message.js";
 
 dotenv.config();
 
@@ -37,100 +37,110 @@ app.use(helmet());
 app.use(mongoSanitize());
 
 // Data Sanitization against XSS
-app.use(xss());
+// app.use(xss()); // Deprecated and removed
 
 // Prevent Parameter Pollution
 app.use(hpp());
 
 // Performance Middleware
-app.use(compression({
-  level: 6,
-  threshold: 0,
-  filter: (req, res) => {
-    if (req.headers['x-no-compression']) {
-      return false;
-    }
-    return compression.filter(req, res);
-  }
-}));
+app.use(
+  compression({
+    level: 6,
+    threshold: 0,
+    filter: (req, res) => {
+      if (req.headers["x-no-compression"]) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  }),
+);
 
 // Serve Static Files with Caching Headers
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from "path";
+import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-app.use(express.static(path.join(__dirname, '../client/dist'), {
-  maxAge: '1y', // Cache static assets for 1 year
-  etag: false
-}));
+// app.use(
+//   express.static(path.join(__dirname, "../client/dist"), {
+//     maxAge: "1y", // Cache static assets for 1 year
+//     etag: false,
+//   }),
+// );
 
 // Rate Limiting (100 requests per 15 mins per IP)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
+  windowMs: 15 * 60 * 1000,
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { message: "Too many requests, please try again later." }
+  message: { message: "Too many requests, please try again later." },
 });
-app.use('/api', limiter);
+app.use("/api", limiter);
 
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
-  process.env.CLIENT_URL // Production Vercel URL
+  process.env.CLIENT_URL, // Production Vercel URL
 ].filter(Boolean);
 
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+  }),
+);
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 // Database Connection
-mongoose.connect(process.env.MONGODB_URI)
-.then(() => console.log('MongoDB connection established successfully'))
-.catch(err => console.error('MongoDB connection error:', err));
+mongoose
+  .connect(process.env.MONGODB_URI)
+  .then(() => console.log("MongoDB connection established successfully"))
+  .catch((err) => console.error("MongoDB connection error:", err));
 
 // Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/rooms', roomRoutes);
-app.use('/api/bookings', bookingRoutes);
-app.use('/api/billing', billingRoutes);
-app.use('/api/tasks', taskRoutes);
-app.use('/api/reports', reportRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/search', searchRoutes);
-app.use('/api/reviews', reviewRoutes);
-app.use('/api/chat', chatRoutes);
-app.use('/api/events', eventRoutes);
-app.use('/api/inquiries', inquiryRoutes);
-app.use('/api/notifications', notificationRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/rooms", roomRoutes);
+app.use("/api/bookings", bookingRoutes);
+app.use("/api/billing", billingRoutes);
+app.use("/api/tasks", taskRoutes);
+app.use("/api/reports", reportRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/search", searchRoutes);
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/chat", chatRoutes);
+app.use("/api/events", eventRoutes);
+app.use("/api/inquiries", inquiryRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 // Serve React App for any other route (SPA Support)
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/dist/index.js')); // Correction: client/dist uses index.html, wait. 
-  // Should check if it exists or let 404 handle API. But usually * is last.
-  // Actually, let's put it after API routes interact.
-  res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+// Root Route for Vercel
+app.get("/", (req, res) => {
+  res.status(200).json({ message: "Server is running" });
+});
+
+// 404 Handler for unknown routes
+app.use((req, res) => {
+  res.status(404).json({ message: "Route not found" });
 });
 
 // Socket.io removed in favor of Pusher (Stateless)
 // io.on('connection') logic moved to direct API routes triggering Pusher events
 
-// For Vercel, we export the app. 
+// For Vercel, we export the app.
 // For local dev, we listen on PORT.
-if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
-    app.listen(PORT, () => {
-      console.log(`Server is running on port: ${PORT}`);
-    });
+if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Server is running on port: ${PORT}`);
+  });
 }
 
 export default app;
